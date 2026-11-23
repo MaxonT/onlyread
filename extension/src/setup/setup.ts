@@ -4,9 +4,9 @@ import { celebrate } from '../shared/confetti';
 import { initTheme } from '../shared/theme';
 import { cloudProblem } from '../shared/cloud-ui';
 import { anthropicLine, mountByokForm, type SaveResult } from '../shared/byok-form';
-import { lockedBy } from '../shared/messaging';
+import { lockedBy, send } from '../shared/messaging';
 import { takeSignInResult } from '../shared/sign-in-result';
-import type { CloudStatus } from '../shared/types';
+import type { CloudStatus, Status } from '../shared/types';
 import { agreeToJudge } from '../shared/consent-ui';
 import { go, installDemo, showDemo } from './demo-steps';
 import { mountScene } from '../shared/demo-scene';
@@ -24,11 +24,16 @@ function result(text: string, kind: '' | 'ok' | 'err' | 'warn' = ''): void {
 const save = $<HTMLButtonElement>('save-key');
 const done = $<HTMLButtonElement>('done');
 const form = mountByokForm();
+// The show/hide button on the key field follows the settings lock, which this window learns from the background.
+const followLock = async () => { try { (await form).setLock((await send<Status>({ type: 'status:get' })).lock); } catch { (await form).setLock(undefined); } };
+void followLock();
+setInterval(() => void followLock(), 3000);
 
 save.addEventListener('click', async () => {
   const f = await form;
   save.classList.add('busy'); // spins while it saves and tests
   result('');
+  f.hideKey(); // hidden for every attempt, also one that stops at the consent
   await agreeToJudge(); // saving a key is the agreement the note under it states
   // Tested before anything is stored: a key that fails changes nothing.
   let t: SaveResult;

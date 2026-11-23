@@ -417,6 +417,7 @@ async function refresh(force = false): Promise<void> {
   ]);
   const current = asked.limit === activityLimit && asked.offset === activityOffset;
   lock = status.lock;
+  void byokForm.then((f) => f.setLock(status.lock));
   siteIcons = new Map(sites.filter((s) => s.iconUrl).map((s) => [s.id, s.iconUrl!]));
   renderCounts(status, sites, activity);
   if (current) renderActivity(activity);
@@ -649,6 +650,7 @@ $('save-key').addEventListener('click', async () => {
   const btn = $<HTMLButtonElement>('save-key');
   btn.classList.add('busy'); // spins while it saves and tests; no "testing" line
   keyResult('');
+  void byokForm.then((f) => f.hideKey()); // hidden for every attempt, also one that stops at the consent or the PIN
   try {
     await agreeToJudge(); // saving a key is the agreement the note under it states
     const form = await byokForm;
