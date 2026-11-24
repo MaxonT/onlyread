@@ -41,6 +41,8 @@ interface ByokForm {
   save(): Promise<SaveResult>;
   /** The settings lock, for the show/hide button on the key field (it stays off while the settings are locked). */
   setLock(lock: SettingsLock | undefined): void;
+  /** Take a place in line for a lock read; only the newest read's result is applied (see key-reveal.ts). */
+  beginLockRead(): (lock: SettingsLock | undefined) => void;
   /** Put the key field back to hidden (a Save and test that stops before it reaches `save()`). */
   hideKey(): void;
   removeKey(): Promise<void>;
@@ -133,6 +135,7 @@ export async function mountByokForm(): Promise<ByokForm> {
   return {
     choice,
     setLock: reveal.setLock,
+    beginLockRead: reveal.beginLockRead,
     hideKey: reveal.hide,
     async save() {
       reveal.hide(); // hidden for every attempt, a failed one included

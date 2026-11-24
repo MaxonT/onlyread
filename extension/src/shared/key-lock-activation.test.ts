@@ -83,3 +83,42 @@ describe('a lock activating while the freshly typed key is shown', () => {
     expect(eye().disabled).toBe(false);
   });
 });
+
+describe('lock reads that settle out of order', () => {
+  const later = <T,>() => { let go!: (v: T) => void; const p = new Promise<T>((r) => { go = r; }); return { p, go }; };
+
+  it('an older unlocked read settling after a lock activation does not re-enable reveal', async () => {
+    const form = await mountPage();
+    key().value = 'dummy-key-123';
+    key().dispatchEvent(new Event('input'));
+    const poll = later<SettingsLock>();
+    const applyPoll = form.beginLockRead(); // a poll starts while unlocked and stalls
+    void poll.p.then((l) => applyPoll(l));
+    eye().click();
+    expect(key().type).toBe('text');
+    lockNow = { ...open, agent: true };
+    emit({ agentTabs: { oldValue: [], newValue: [7] } }, 'session');
+    await flush(); // the newer read lands: locked
+    expect(eye().disabled).toBe(true);
+    poll.go(open); // the stale unlocked answer arrives last
+    await flush();
+    expect(eye().disabled).toBe(true);
+    expect(key().type).toBe('password');
+  });
+
+  it('an older locked read settling after a newer unlocked read is dropped too, and a failed newest read is unknown', async () => {
+    const form = await mountPage();
+    key().value = 'dummy-key-123';
+    key().dispatchEvent(new Event('input'));
+    const older = form.beginLockRead();
+    const newer = form.beginLockRead();
+    newer(open);
+    expect(eye().disabled).toBe(false);
+    older({ ...open, agent: true });
+    expect(eye().disabled).toBe(false); // only the newest read applies
+    const newest = form.beginLockRead();
+    newer(open); // an older result cannot override the newest, still pending
+    newest(undefined); // newest failed: unknown, so locked
+    expect(eye().disabled).toBe(true);
+  });
+});

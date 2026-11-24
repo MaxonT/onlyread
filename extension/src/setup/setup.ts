@@ -26,7 +26,10 @@ const save = $<HTMLButtonElement>('save-key');
 const done = $<HTMLButtonElement>('done');
 const form = mountByokForm();
 // The show/hide button on the key field follows the settings lock, which this window learns from the background.
-const followLock = async () => { try { (await form).setLock((await send<Status>({ type: 'status:get' })).lock); } catch { (await form).setLock(undefined); } };
+const followLock = async () => {
+  const apply = (await form).beginLockRead(); // an older poll that settles late is dropped
+  try { apply((await send<Status>({ type: 'status:get' })).lock); } catch { apply(undefined); }
+};
 void followLock();
 setInterval(() => void followLock(), 3000);
 // A lock that starts hides the key at once, without waiting for the poll.

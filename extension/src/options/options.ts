@@ -411,6 +411,7 @@ async function refresh(force = false): Promise<void> {
   // The activity page this refresh asks for: its answer is drawn only if the person has not moved since (a refresh
   // every 3 s overlaps a click on Next, and its older answer put the page back).
   const asked = { limit: activityLimit, offset: activityOffset };
+  const applyLock = byokForm.then((f) => f.beginLockRead()); // placed before the asks: a later read wins
   const [sites, status, activity] = await Promise.all([
     send<SiteView[]>({ type: 'sites:list' }),
     send<Status>({ type: 'status:get' }),
@@ -418,7 +419,7 @@ async function refresh(force = false): Promise<void> {
   ]);
   const current = asked.limit === activityLimit && asked.offset === activityOffset;
   lock = status.lock;
-  void byokForm.then((f) => f.setLock(status.lock));
+  void applyLock.then((apply) => apply(status.lock));
   siteIcons = new Map(sites.filter((s) => s.iconUrl).map((s) => [s.id, s.iconUrl!]));
   renderCounts(status, sites, activity);
   if (current) renderActivity(activity);

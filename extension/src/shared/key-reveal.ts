@@ -8,6 +8,10 @@ export interface KeyReveal {
   loaded(saved: string | undefined): void;
   /** The settings lock as the background reports it; `undefined` until known. */
   setLock(lock: SettingsLock | undefined): void;
+  /** Start a lock read: take its place in line now, before asking the background. The returned function applies the
+   *  result only if no later read (or direct `setLock`) has started since, so an older answer that settles late never
+   *  puts back an older lock state. */
+  beginLockRead(): (lock: SettingsLock | undefined) => void;
   /** Back to hidden (provider changed, Save and test). */
   hide(): void;
 }
@@ -19,12 +23,13 @@ export function lockedForReveal(lock: SettingsLock | undefined): boolean {
 }
 
 export function mountKeyReveal(key: HTMLInputElement, button: HTMLButtonElement | null): KeyReveal {
-  if (!button) return { loaded() {}, setLock() {}, hide() { key.type = 'password'; } }; // a page without the button
+  if (!button) return { loaded() {}, setLock() {}, beginLockRead: () => () => {}, hide() { key.type = 'password'; } }; // a page without the button
   // `fresh`: the field's content was typed during this visit. A stored key loaded into the field is not fresh, and an
   // edit of it does not make it so: only emptying the field first does, so the stored part never shows.
   let fresh = true;
   let storedKey: string | undefined; // what the form filled in from storage
   let lock: SettingsLock | undefined;
+  let lockSeq = 0; // the newest lock read (or direct set) that has started
 
   const render = () => {
     const allowed = fresh && !lockedForReveal(lock);
@@ -52,7 +57,11 @@ export function mountKeyReveal(key: HTMLInputElement, button: HTMLButtonElement 
   render();
   return {
     loaded(saved) { storedKey = saved || undefined; fresh = !storedKey; key.type = 'password'; render(); },
-    setLock(next) { lock = next; render(); },
+    setLock(next) { lockSeq++; lock = next; render(); },
+    beginLockRead() {
+      const mine = ++lockSeq;
+      return (next) => { if (mine === lockSeq) { lock = next; render(); } };
+    },
     hide() { key.type = 'password'; render(); },
   };
 }
@@ -64,11 +73,12 @@ const LOCK_KEYS = ['agentBrowser', 'settingsPin', 'agentTabs', 'declaredSession'
 /** Follows the lock between polls: the moment one of those values changes, the key is hidden and the button disabled
  *  (the lock counts as unknown), then `read` says what the lock is now. Without this a key typed just before a lock
  *  activates stays visible until the next poll. */
-export function watchLock(reveal: Pick<KeyReveal, 'setLock'>, read: () => Promise<SettingsLock | undefined>): void {
+export function watchLock(reveal: Pick<KeyReveal, 'setLock' | 'beginLockRead'>, read: () => Promise<SettingsLock | undefined>): void {
   chrome.storage.onChanged.addListener((changes) => {
     const moved = LOCK_KEYS.some((k) => changes[k] && JSON.stringify(changes[k]!.oldValue) !== JSON.stringify(changes[k]!.newValue));
     if (!moved) return;
     reveal.setLock(undefined);
-    void read().then((lock) => reveal.setLock(lock), () => reveal.setLock(undefined));
+    const apply = reveal.beginLockRead(); // taken after the unknown state above, so it is the newest read
+    void read().then((lock) => apply(lock), () => apply(undefined));
   });
 }
