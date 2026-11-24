@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { lockedForReveal, mountKeyReveal, type KeyReveal } from './key-reveal';
 import type { SettingsLock } from './types';
 
@@ -200,5 +200,92 @@ describe('the show/hide button', () => {
     expect(button.disabled).toBe(true);
     reveal.setLock({ ...open, pinSet: true, pinUnlocked: true });
     expect(button.disabled).toBe(false);
+  });
+});
+
+describe('a PIN unlock running out while the key is shown', () => {
+  const NOW = 1_700_000_000_000;
+  const pin = (until?: number): SettingsLock => ({ ...open, pinSet: true, pinUnlocked: true, ...(until === undefined ? {} : { pinUnlockedUntil: until }) });
+  const showTyped = () => { reveal.loaded(undefined); type('dummy-key-123'); button.click(); };
+
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('hides the key and disables reveal at the expiry, with no poll in between', () => {
+    reveal.setLock(pin(NOW + 60_000));
+    showTyped();
+    expect(shown()).toBe(true);
+    vi.advanceTimersByTime(59_999);
+    expect(shown()).toBe(true);
+    expect(button.disabled).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(shown()).toBe(false);
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    button.click();
+    expect(shown()).toBe(false);
+  });
+
+  it('a later unlock moves the expiry out, so the first time no longer hides the key', () => {
+    reveal.setLock(pin(NOW + 60_000));
+    showTyped();
+    vi.advanceTimersByTime(30_000);
+    reveal.setLock(pin(NOW + 150_000));
+    vi.advanceTimersByTime(60_000); // past the first expiry
+    expect(shown()).toBe(true);
+    expect(button.disabled).toBe(false);
+    vi.advanceTimersByTime(60_000); // the new expiry
+    expect(shown()).toBe(false);
+    expect(button.disabled).toBe(true);
+  });
+
+  it('a lock read that carries the expiry (beginLockRead) schedules it too', () => {
+    reveal.loaded(undefined);
+    reveal.beginLockRead()(pin(NOW + 10_000));
+    type('dummy-key-123');
+    button.click();
+    expect(shown()).toBe(true);
+    vi.advanceTimersByTime(10_000);
+    expect(shown()).toBe(false);
+    expect(button.disabled).toBe(true);
+  });
+
+  it('without an expiry time nothing is scheduled and the key stays until the lock says otherwise', () => {
+    reveal.setLock(pin());
+    showTyped();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(shown()).toBe(true);
+    expect(button.disabled).toBe(false);
+  });
+
+  it('a lock with no PIN unlock, or an unknown lock, clears the timer', () => {
+    reveal.setLock(pin(NOW + 60_000));
+    expect(vi.getTimerCount()).toBe(1);
+    reveal.setLock(open);
+    expect(vi.getTimerCount()).toBe(0);
+    reveal.setLock(pin(NOW + 60_000));
+    reveal.setLock(undefined);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('an expiry already in the past hides at once', () => {
+    reveal.setLock(pin(NOW - 1));
+    showTyped();
+    vi.advanceTimersByTime(0);
+    expect(shown()).toBe(false);
+    expect(button.disabled).toBe(true);
+  });
+
+  it('a stale read still cannot replace a newer lock, and its expiry does not schedule', () => {
+    const older = reveal.beginLockRead();
+    reveal.setLock(open);
+    older(pin(NOW + 5_000));
+    expect(vi.getTimerCount()).toBe(0);
+    reveal.loaded(undefined);
+    type('dummy-key-123');
+    button.click();
+    vi.advanceTimersByTime(10_000);
+    expect(shown()).toBe(true);
   });
 });

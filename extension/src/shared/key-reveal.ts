@@ -30,6 +30,25 @@ export function mountKeyReveal(key: HTMLInputElement, button: HTMLButtonElement 
   let storedKey: string | undefined; // what the form filled in from storage
   let lock: SettingsLock | undefined;
   let lockSeq = 0; // the newest lock read (or direct set) that has started
+  let expiry: ReturnType<typeof setTimeout> | undefined;
+
+  /** Every lock change goes through here: stores it, and (re)sets the one timer that ends a PIN unlock. When the unlock
+   *  runs out the key is hidden and the button disabled right then, not at the next poll. No expiry time: no timer. */
+  const adopt = (next: SettingsLock | undefined) => {
+    lock = next;
+    if (expiry !== undefined) { clearTimeout(expiry); expiry = undefined; }
+    const until = next?.pinUnlocked === true ? next.pinUnlockedUntil : undefined;
+    if (typeof until === 'number' && Number.isFinite(until)) {
+      const lapse = () => {
+        expiry = undefined;
+        if (Date.now() < until) { expiry = setTimeout(lapse, until - Date.now()); return; } // fired early
+        if (lock) lock = { ...lock, pinUnlocked: false, pinUnlockedUntil: undefined };
+        render();
+      };
+      expiry = setTimeout(lapse, Math.max(0, until - Date.now()));
+    }
+    render();
+  };
 
   const render = () => {
     const allowed = fresh && !lockedForReveal(lock);
@@ -57,10 +76,10 @@ export function mountKeyReveal(key: HTMLInputElement, button: HTMLButtonElement 
   render();
   return {
     loaded(saved) { storedKey = saved || undefined; fresh = !storedKey; key.type = 'password'; render(); },
-    setLock(next) { lockSeq++; lock = next; render(); },
+    setLock(next) { lockSeq++; adopt(next); },
     beginLockRead() {
       const mine = ++lockSeq;
-      return (next) => { if (mine === lockSeq) { lock = next; render(); } };
+      return (next) => { if (mine === lockSeq) adopt(next); };
     },
     hide() { key.type = 'password'; render(); },
   };

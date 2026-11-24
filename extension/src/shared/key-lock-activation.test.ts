@@ -121,4 +121,21 @@ describe('lock reads that settle out of order', () => {
     newest(undefined); // newest failed: unknown, so locked
     expect(eye().disabled).toBe(true);
   });
+
+  it('the PIN unlock running out hides the key and disables reveal on the page, before any poll', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const until = Date.now() + 60_000;
+      lockNow = { ...open, pinSet: true, pinUnlocked: true, pinUnlockedUntil: until };
+      const form = await mountPage();
+      form.setLock(lockNow);
+      key().value = 'dummy-key-123';
+      key().dispatchEvent(new Event('input'));
+      eye().click();
+      expect(key().type).toBe('text');
+      vi.advanceTimersByTime(60_000);
+      expect(key().type).toBe('password');
+      expect(eye().disabled).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
 });
