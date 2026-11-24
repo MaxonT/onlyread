@@ -16,6 +16,7 @@ import { mountScene } from '../shared/demo-scene';
 import { reloadOnDevBuild } from '../shared/dev-reload';
 import { markFirstJudge } from '../shared/first-judge';
 import { setLockText } from '../shared/lock-text';
+import { watchLock } from '../shared/key-reveal';
 // In another page's frame without asking for framed mode: blank, and nothing below runs (framed.ts strayFrame).
 if (strayFrame(location.ancestorOrigins ?? [], window.top === window, framedSection() !== undefined)) {
   document.body.replaceChildren();
@@ -646,6 +647,8 @@ addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') void addSit
 // ---- AI judge, own key: gateway, key and review model (shared with the first-run window).
 function keyResult(text: string, kind: '' | 'ok' | 'err' | 'warn' = ''): void { const el = $('key-result'); el.textContent = text; el.className = `result ${kind}`; }
 const byokForm = mountByokForm();
+// A lock that starts hides the key at once, without waiting for the next refresh.
+void byokForm.then((f) => watchLock(f, async () => (await send<Status>({ type: 'status:get' })).lock));
 $('save-key').addEventListener('click', async () => {
   const btn = $<HTMLButtonElement>('save-key');
   btn.classList.add('busy'); // spins while it saves and tests; no "testing" line

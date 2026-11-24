@@ -5,6 +5,7 @@ import { initTheme } from '../shared/theme';
 import { cloudProblem } from '../shared/cloud-ui';
 import { anthropicLine, mountByokForm, type SaveResult } from '../shared/byok-form';
 import { lockedBy, send } from '../shared/messaging';
+import { watchLock } from '../shared/key-reveal';
 import { takeSignInResult } from '../shared/sign-in-result';
 import type { CloudStatus, Status } from '../shared/types';
 import { agreeToJudge } from '../shared/consent-ui';
@@ -28,6 +29,8 @@ const form = mountByokForm();
 const followLock = async () => { try { (await form).setLock((await send<Status>({ type: 'status:get' })).lock); } catch { (await form).setLock(undefined); } };
 void followLock();
 setInterval(() => void followLock(), 3000);
+// A lock that starts hides the key at once, without waiting for the poll.
+void form.then((f) => watchLock(f, async () => (await send<Status>({ type: 'status:get' })).lock));
 
 save.addEventListener('click', async () => {
   const f = await form;

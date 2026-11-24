@@ -56,3 +56,19 @@ export function mountKeyReveal(key: HTMLInputElement, button: HTMLButtonElement 
     hide() { key.type = 'password'; render(); },
   };
 }
+
+/** What the background writes to storage when a lock starts or ends: the agent browser mark, the settings PIN, and the
+ *  agent session (session storage). */
+const LOCK_KEYS = ['agentBrowser', 'settingsPin', 'agentTabs', 'declaredSession'];
+
+/** Follows the lock between polls: the moment one of those values changes, the key is hidden and the button disabled
+ *  (the lock counts as unknown), then `read` says what the lock is now. Without this a key typed just before a lock
+ *  activates stays visible until the next poll. */
+export function watchLock(reveal: Pick<KeyReveal, 'setLock'>, read: () => Promise<SettingsLock | undefined>): void {
+  chrome.storage.onChanged.addListener((changes) => {
+    const moved = LOCK_KEYS.some((k) => changes[k] && JSON.stringify(changes[k]!.oldValue) !== JSON.stringify(changes[k]!.newValue));
+    if (!moved) return;
+    reveal.setLock(undefined);
+    void read().then((lock) => reveal.setLock(lock), () => reveal.setLock(undefined));
+  });
+}
